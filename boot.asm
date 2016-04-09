@@ -1,7 +1,7 @@
 %define BOOTSEG 0x07c0
 %define INITSEG 0x9000
 %define SYSSEG 0x1000
-%define SYSSEG 0x3000
+%define SYSSIZE 0x3000
 %define ENDSEG SYSSEG + SYSSIZE
 %define SETUPLEN 4 ;number of sectors
 
@@ -75,8 +75,8 @@ rp_read:
 	ret
 ok1_read:
 ;算出下次磁盘操作需要读取的扇区数目
-	mov ax, sectors;取出每磁道的扇区数
-	sub ax, sread; 当前磁道已经读出的扇区
+	mov ax, [sectors];取出每磁道的扇区数
+	sub ax, [sread]; 当前磁道已经读出的扇区
 	mov cx, ax
 	shl cx, 9	;*512,转换成字节
 	add cx, bx;数据缓冲区buffer偏移
@@ -89,26 +89,26 @@ ok2_read:
 ;此次磁盘操作后需要切换磁头，或者磁道
 	call read_track
 	mov cx, ax;上次操作读了多少个扇区
-	add ax, sread ;加上历史存数
-	cmp ax, sectors;是不是读满了一个磁道了
+	add ax, [sread] ;加上历史存数
+	cmp ax, [sectors];是不是读满了一个磁道了
 	jne ok3_read ;如果还没读满，继续去读取该磁道的数据
 	mov ax, 1
 ;磁盘读数据原理就是磁头切换优先，因为磁头切换很快，比磁道切换快很多 
-	sub ax, head;如果是磁头0了,就去磁头1读取数据，磁头0和1上的每条磁道都要扫描一次
+	sub ax, [head];如果是磁头0了,就去磁头1读取数据，磁头0和1上的每条磁道都要扫描一次
 	jne ok4_read
-	inc track;如果磁头0和磁头1的磁道都读过一次，就读取下一磁道
+	inc dword [track];如果磁头0和磁头1的磁道都读过一次，就读取下一磁道
 ok4_read:
-	mov head, ax
+	mov [head], ax
 	xor ax, ax
 ok3_read:
 ;判读是否读完一个段
-	mov read, ax
+	mov [sread], ax
 	shl cx, 9;cx表示前面一次磁盘操作读了多少个扇区
 	add bx, cx
 	jnc rp_read; bx<0x10000,bx为16位,溢出就置c位了
-	mov es, ax
+	mov ax, es
 	add ax, 0x1000
-	mov ex, ax;段基地址+0x1000
+	mov es, ax;段基地址+0x1000
 	xor bx, bx
 	jmp rp_read 
 	
@@ -118,13 +118,13 @@ read_track:
 	push bx
 	push cx
 	push dx
-	mov dx, track ;读出当前磁道号
-	mov cx, sread; 已经读了几个扇区
+	mov dx, [track] ;读出当前磁道号
+	mov cx, [sread]; 已经读了几个扇区
 	inc cx ;cl表示下一个要读的扇区号, ch表示当前磁道号
 	mov ch, dl;填充当前磁道号
-	mov dx, head;读出当前磁头号
+	mov dx, [head];读出当前磁头号
 	mov dh, dl;把磁头号填充进去	
-	mov dl, 8;驱动器号，这里是硬盘
+	mov dl, 0x80;驱动器号，这里是硬盘
 	mov ah, 2
 	int 0x13
 	jc bad_rt
@@ -157,6 +157,6 @@ track dw 0
 
 
 
-;times 510-($-$$) db 0 ; Fill the remain space,make the 2 binary file 512 byt    es
-;dw 0xaa55 ; end sign
+times 510-($-$$) db 0 ; Fill the remain space,make the 2 binary file 512 byt    es
+dw 0xaa55 ; end sign
 ;软驱一定要加最后这个，要不然找不到启动设备
